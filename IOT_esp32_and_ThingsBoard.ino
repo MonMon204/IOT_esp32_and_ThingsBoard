@@ -46,13 +46,16 @@ void callback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
+
+  // send the received command from MQTT to PLC
+
   String method = doc["method"];
   int value = doc["params"];
 
   if (method == "setOutput") {
     bool state = (value == 1);
 
-    // Set discrete input instead of coil
+    // Set discrete input
     discreteInputs[0] = state;  // address 10001 → PLC reads at 0x10000
     digitalWrite(LED_BUILTIN_PIN, state ? HIGH : LOW);
 
@@ -93,6 +96,7 @@ void setup() {
   Serial.println("✅ Modbus RTU Slave ready (ID = 4)");
 }
 
+
 // ---------- MQTT Reconnect ----------
 void reconnectMQTT() {
   while (!client.connected()) {
@@ -109,6 +113,7 @@ void reconnectMQTT() {
   }
 }
 
+
 // ---------- Send Data to ThingsBoard ----------
 void sendToThingsBoard(float temperature) {
   StaticJsonDocument<128> doc;
@@ -120,6 +125,10 @@ void sendToThingsBoard(float temperature) {
   Serial.println("📤 Sent to ThingsBoard: " + payload);
 }
 
+
+static float temperature = 0;
+static float lastTemperature = 0;
+
 // ---------- Loop ----------
 void loop() {
   if (!client.connected()) reconnectMQTT();
@@ -129,19 +138,14 @@ void loop() {
   modbus.poll();
 
   // Read temperature written by PLC to holding register 40001 (index 0)
-  uint16_t rawValue = holdingRegs[0];
-  float temperature = rawValue;
+  temperature = holdingRegs[0];
 
-  static uint16_t lastValue = 0;
-  if (rawValue != lastValue) {
-    Serial.printf("🌡 New temperature received: %.1f °C (raw: %u)\n", temperature, rawValue);
-    digitalWrite(LED_BUILTIN_PIN, HIGH);
-    delay(100);
-    digitalWrite(LED_BUILTIN_PIN, LOW);
-    lastValue = rawValue;
+  if (temperature != lastTemperature) {
+    Serial.printf("🌡 New temperature received: %.1f °C \n", temperature);
+    lastTemperature = temperature;
   }
 
-  // Send to ThingsBoard every 2 seconds
+  // Send to ThingsBoard every x seconds
   if (millis() - lastSendTime > SENDTOTHINGSBOARDTIME) {
     sendToThingsBoard(temperature);
     lastSendTime = millis();
